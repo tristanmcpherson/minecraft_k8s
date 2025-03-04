@@ -1,5 +1,10 @@
 FROM openjdk:17-slim
 
+# Define build arguments with defaults
+ARG MIN_MEMORY=1G
+ARG MAX_MEMORY=2G
+ARG SERVER_PORT=25565
+
 WORKDIR /data
 
 # Install necessary tools
@@ -11,8 +16,11 @@ RUN apt-get update && \
 # Copy the extracted server files
 COPY server_files/ /data/
 
-# Set the entry point
-ENTRYPOINT ["java", "-Xmx2G", "-Xms1G", "-jar", "server.jar", "nogui"]
+# Copy server.properties if it exists
+COPY server_files/server.properties /data/server.properties
+
+# Set the entry point with memory settings from build args
+ENTRYPOINT ["sh", "-c", "java -Xms${MIN_MEMORY} -Xmx${MAX_MEMORY} -jar server.jar nogui"]
 
 # Expose the Minecraft server port
-EXPOSE 25565 
+EXPOSE ${SERVER_PORT} 

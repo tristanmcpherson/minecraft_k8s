@@ -37,6 +37,18 @@ jobs:
         unzip "$ZIPFILE" -d server_files
         
         echo "Server files extracted successfully"
+        
+        # Generate server.properties from config.json
+        if [ -f "minecraft_server/config.json" ]; then
+          echo "Generating server.properties from config.json"
+          
+          # Extract server properties from config.json
+          jq -r '.server.properties | to_entries | map("\(.key)=\(.value)") | .[]' minecraft_server/config.json > server_files/server.properties
+          
+          echo "server.properties generated successfully"
+        else
+          echo "Config file not found, skipping server.properties generation"
+        fi
     
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v2
@@ -48,12 +60,36 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     
+    - name: Extract build args from config
+      id: build_args
+      run: |
+        if [ -f "minecraft_server/config.json" ]; then
+          MIN_MEMORY=$(jq -r '.server.memory.min // "1G"' minecraft_server/config.json)
+          MAX_MEMORY=$(jq -r '.server.memory.max // "2G"' minecraft_server/config.json)
+          SERVER_PORT=25565
+          
+          echo "min_memory=$MIN_MEMORY" >> $GITHUB_OUTPUT
+          echo "max_memory=$MAX_MEMORY" >> $GITHUB_OUTPUT
+          echo "server_port=$SERVER_PORT" >> $GITHUB_OUTPUT
+          
+          echo "Extracted memory settings: Min=$MIN_MEMORY, Max=$MAX_MEMORY"
+        else
+          echo "Config file not found, using default memory settings"
+          echo "min_memory=1G" >> $GITHUB_OUTPUT
+          echo "max_memory=2G" >> $GITHUB_OUTPUT
+          echo "server_port=25565" >> $GITHUB_OUTPUT
+        fi
+    
     - name: Build and push Docker image
       uses: docker/build-push-action@v4
       with:
         context: .
         push: true
         tags: ghcr.io/${{ github.repository_owner }}/minecraft-server:${{ github.sha }}
+        build-args: |
+          MIN_MEMORY=${{ steps.build_args.outputs.min_memory }}
+          MAX_MEMORY=${{ steps.build_args.outputs.max_memory }}
+          SERVER_PORT=${{ steps.build_args.outputs.server_port }}
     
     - name: Set up kubectl
       uses: azure/setup-kubectl@v3
