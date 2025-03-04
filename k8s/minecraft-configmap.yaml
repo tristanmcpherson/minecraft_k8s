@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: minecraft-config
+  labels:
+    app: minecraft
+data:
+  server.properties: |
+    difficulty=normal
+    gamemode=survival
+    max-players=20
+    motd=Kubernetes Minecraft Server
+    pvp=true
+    allow-nether=true
+    enable-command-block=false
+    spawn-protection=16
+    view-distance=10 

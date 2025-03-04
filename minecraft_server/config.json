@@ -1,0 +1,27 @@
+{
+  "deployment": {
+    "name": "bmc4-server",
+    "replicas": 1
+  },
+  "server": {
+    "version": "1.19.4",
+    "memory": {
+      "min": "2G",
+      "max": "4G"
+    },
+    "properties": {
+      "difficulty": "normal",
+      "gamemode": "survival",
+      "max-players": 20,
+      "motd": "Shredder's BMC4 Minecraft Server",
+      "pvp": true,
+      "allow-nether": true,
+      "enable-command-block": false,
+      "spawn-protection": 16,
+      "view-distance": 10
+    }
+  },
+  "storage": {
+    "size": "10Gi"
+  }
+} 
