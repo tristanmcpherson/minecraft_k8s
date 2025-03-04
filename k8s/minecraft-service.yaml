@@ -8,7 +8,7 @@ spec:
   ports:
   - port: 25565
     targetPort: 25565
-    nodePort: 25565
+    nodePort: 30565
     protocol: TCP
   selector:
     app: minecraft
