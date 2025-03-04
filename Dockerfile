@@ -8,12 +8,8 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy the Minecraft server zip file
-COPY minecraft_server/minecraft_server.zip /tmp/
-
-# Extract the server
-RUN unzip /tmp/minecraft_server.zip -d /data && \
-    rm /tmp/minecraft_server.zip
+# Copy the extracted server files
+COPY server_files/ /data/
 
 # Set the entry point
 ENTRYPOINT ["java", "-Xmx2G", "-Xms1G", "-jar", "server.jar", "nogui"]

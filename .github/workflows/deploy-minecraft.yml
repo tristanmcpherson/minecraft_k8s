@@ -18,6 +18,26 @@ jobs:
       with:
         lfs: true
     
+    - name: Extract Minecraft server files
+      run: |
+        # Find the first zip file in the minecraft_server directory
+        ZIPFILE=$(find minecraft_server -name "*.zip" | head -n 1)
+        
+        if [ -z "$ZIPFILE" ]; then
+          echo "No zip file found in minecraft_server directory"
+          exit 1
+        fi
+        
+        echo "Found zip file: $ZIPFILE"
+        
+        # Create directory for extracted files
+        mkdir -p server_files
+        
+        # Extract the zip file
+        unzip "$ZIPFILE" -d server_files
+        
+        echo "Server files extracted successfully"
+    
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v2
     
