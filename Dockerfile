@@ -5,6 +5,11 @@ ARG MIN_MEMORY=1G
 ARG MAX_MEMORY=2G
 ARG SERVER_PORT=25565
 
+# Set environment variables from build args
+ENV MIN_MEMORY=${MIN_MEMORY}
+ENV MAX_MEMORY=${MAX_MEMORY}
+ENV SERVER_PORT=${SERVER_PORT}
+
 WORKDIR /data
 
 # Install necessary tools
@@ -19,8 +24,12 @@ COPY server_files/ /data/
 # Copy server.properties if it exists
 COPY server_files/server.properties /data/server.properties
 
-# Set the entry point with memory settings from build args
-ENTRYPOINT ["sh", "-c", "java -Xms${MIN_MEMORY} -Xmx${MAX_MEMORY} -jar server.jar nogui"]
+# Copy and make the docker entrypoint script executable
+COPY server_files/docker-entrypoint.sh /data/docker-entrypoint.sh
+RUN chmod +x /data/docker-entrypoint.sh
+
+# Set the entry point to the docker entrypoint script
+ENTRYPOINT ["/data/docker-entrypoint.sh"]
 
 # Expose the Minecraft server port
 EXPOSE ${SERVER_PORT} 
