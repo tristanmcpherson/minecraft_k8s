@@ -15,8 +15,21 @@ jobs:
     steps:
     - name: Install dependencies
       run: |
-        apt-get install -y git-lfs unzip jq gettext-base curl
+        sudo apt-get update
+        sudo apt-get install -y git-lfs unzip jq gettext-base curl
         git lfs install
+
+    - name: Check environment
+      run: |
+        echo "Checking environment..."
+        whoami
+        pwd
+        echo "Docker version:"
+        docker --version || echo "Docker not found"
+        echo "System info:"
+        uname -a
+        echo "Available disk space:"
+        df -h
 
     - name: Checkout code
       uses: actions/checkout@v3
