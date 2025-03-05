@@ -13,6 +13,12 @@ jobs:
       packages: write
     
     steps:
+    - name: Install dependencies
+      run: |
+        apt-get update
+        apt-get install -y git-lfs unzip jq gettext-base curl
+        git lfs install
+
     - name: Checkout code
       uses: actions/checkout@v3
       with:
