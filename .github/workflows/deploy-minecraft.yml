@@ -241,24 +241,20 @@ jobs:
         
         echo "Using memory settings: Min=$MIN_MEMORY, Max=$MAX_MEMORY"
     
-    - name: Login to GitHub Container Registry
-      uses: docker/login-action@v2
+    - name: Build and push with Kaniko
+      uses: aevea/action-kaniko@master
       with:
         registry: ghcr.io
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
-    
-    - name: Build and push with Kaniko
-      uses: docker/build-push-action@v4
-      with:
-        context: .
-        push: true
-        tags: ghcr.io/${{ github.repository_owner }}/minecraft-server:${{ github.sha }}
-        builder: kaniko
-        build-args: |
-          MIN_MEMORY=${{ steps.build_args.outputs.min_memory }}
-          MAX_MEMORY=${{ steps.build_args.outputs.max_memory }}
-          SERVER_PORT=${{ steps.build_args.outputs.server_port }}
+        image: minecraft-server
+        tag: ${{ github.sha }}
+        cache: true
+        cache_registry: cache
+        extra_args: |
+          --build-arg MIN_MEMORY=${{ steps.build_args.outputs.min_memory }}
+          --build-arg MAX_MEMORY=${{ steps.build_args.outputs.max_memory }}
+          --build-arg SERVER_PORT=${{ steps.build_args.outputs.server_port }}
     
     - name: Set up kubectl
       uses: azure/setup-kubectl@v3
