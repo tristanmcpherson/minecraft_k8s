@@ -6,12 +6,6 @@ echo "Starting Minecraft server with the following settings:"
 echo "Memory: ${MIN_MEMORY} - ${MAX_MEMORY}"
 echo "Server properties loaded from: /data/server.properties"
 
-# Accept EULA if not already accepted
-if [ ! -f "/data/eula.txt" ] || ! grep -q "eula=true" "/data/eula.txt"; then
-  echo "Accepting Minecraft EULA..."
-  echo "eula=true" > /data/eula.txt
-fi
-
 # Set memory settings in environment for the start.sh script to use
 export JAVA_OPTS="-Xms${MIN_MEMORY} -Xmx${MAX_MEMORY}"
 
@@ -31,4 +25,5 @@ else
   
   # Start the Minecraft server directly
   echo "Starting Minecraft server..."
-  exec java -Xms${MIN_MEMORY} -Xmx${MAX_MEMORY} -jar server.jar nogui 
+  exec java -Xms${MIN_MEMORY} -Xmx${MAX_MEMORY} -jar server.jar nogui
+fi 

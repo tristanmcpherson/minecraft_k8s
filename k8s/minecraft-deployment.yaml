@@ -26,7 +26,7 @@ spec:
           name: minecraft
         env:
         - name: EULA
-          value: "TRUE"
+          value: "true"
         resources:
           requests:
             memory: "2Gi"
