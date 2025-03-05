@@ -56,6 +56,17 @@ jobs:
         import json
         import os
 
+        def clean_cookie_string(cookie_str):
+            # Remove any newlines and extra whitespace
+            cookie_str = cookie_str.replace('\n', '').strip()
+            # Split cookies and clean each one
+            cookies = {}
+            for cookie in cookie_str.split(';'):
+                if '=' in cookie:
+                    name, value = cookie.strip().split('=', 1)
+                    cookies[name.strip()] = value.strip()
+            return cookies
+
         def get_direct_download_url(api_url, cookie_str):
             try:
                 # Set up headers to mimic a browser
@@ -70,9 +81,9 @@ jobs:
                 # Create a session to handle cookies and redirects
                 session = requests.Session()
                 
-                # If we have cookies, add them to the session
+                # If we have cookies, clean and add them to the session
                 if cookie_str:
-                    cookies = dict(pair.split("=", 1) for pair in cookie_str.split("; "))
+                    cookies = clean_cookie_string(cookie_str)
                     session.cookies.update(cookies)
                     print(f"Using {len(cookies)} cookies", file=sys.stderr)
 
@@ -85,6 +96,7 @@ jobs:
                 final_url = response.url
                 print(f"Final download URL after redirects: {final_url}", file=sys.stderr)
 
+                # Return only the cookies that were actually used/updated
                 return final_url, dict(session.cookies.items())
 
             except Exception as e:
