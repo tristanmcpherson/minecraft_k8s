@@ -43,6 +43,8 @@ jobs:
         lfs: false
 
     - name: Download and extract server pack
+      env:
+        CURSEFORGE_COOKIES: ${{ secrets.CURSEFORGE_COOKIES }}
       run: |
         # Create directory for server files
         mkdir -p server_files
@@ -53,10 +55,17 @@ jobs:
         import sys
         import json
         import re
+        import os
         from bs4 import BeautifulSoup
         from urllib.parse import urljoin
+        from http.cookies import SimpleCookie
 
-        def get_direct_download_url(download_page_url):
+        def parse_cookie_string(cookie_str):
+            cookie = SimpleCookie()
+            cookie.load(cookie_str)
+            return {k: v.value for k, v in cookie.items()}
+
+        def get_direct_download_url(download_page_url, cookie_str):
             try:
                 # Set up headers to mimic a browser
                 headers = {
@@ -68,10 +77,14 @@ jobs:
                     'Upgrade-Insecure-Requests': '1',
                 }
 
+                # Parse cookies from environment
+                cookies = parse_cookie_string(cookie_str) if cookie_str else {}
+                print(f"Using {len(cookies)} cookies", file=sys.stderr)
+
                 # First get the download page
                 print(f"Accessing download page: {download_page_url}", file=sys.stderr)
                 session = requests.Session()
-                response = session.get(download_page_url, headers=headers)
+                response = session.get(download_page_url, headers=headers, cookies=cookies)
                 response.raise_for_status()
 
                 # Parse the page
@@ -85,27 +98,28 @@ jobs:
                         direct_url = urljoin('https://www.curseforge.com', href)
                         print(f"Found download link: {direct_url}", file=sys.stderr)
                         
-                        # Follow the download link
+                        # Follow the download link with cookies
                         print("Following download link...", file=sys.stderr)
-                        response = session.get(direct_url, headers=headers, allow_redirects=True)
+                        response = session.get(direct_url, headers=headers, cookies=cookies, allow_redirects=True)
                         response.raise_for_status()
                         
                         # The final URL should be the direct file download
                         final_url = response.url
                         print(f"Final download URL: {final_url}", file=sys.stderr)
-                        return final_url
+                        return final_url, session.cookies.get_dict()
 
                 raise Exception("No download button found on the page")
                 
             except Exception as e:
                 print(f"Error getting download URL: {str(e)}", file=sys.stderr)
-                return None
+                return None, None
 
         if __name__ == "__main__":
             download_page_url = sys.argv[1]
-            direct_url = get_direct_download_url(download_page_url)
+            cookie_str = os.environ.get('CURSEFORGE_COOKIES', '')
+            direct_url, cookies = get_direct_download_url(download_page_url, cookie_str)
             if direct_url:
-                print(direct_url)
+                print(json.dumps({'url': direct_url, 'cookies': cookies}))
             else:
                 sys.exit(1)
         EOF
@@ -126,18 +140,21 @@ jobs:
         
         # Get the direct download URL using the Python script
         echo "Getting direct download URL..."
-        DIRECT_URL=$(python3 get_curseforge_download.py "$SERVER_PACK_URL")
+        DOWNLOAD_INFO=$(python3 get_curseforge_download.py "$SERVER_PACK_URL")
         
-        if [ -z "$DIRECT_URL" ]; then
+        if [ -z "$DOWNLOAD_INFO" ]; then
           echo "Failed to get direct download URL"
           exit 1
         fi
         
+        DIRECT_URL=$(echo "$DOWNLOAD_INFO" | jq -r '.url')
+        COOKIES=$(echo "$DOWNLOAD_INFO" | jq -r '.cookies | to_entries | map("\(.key)=\(.value)") | join("; ")')
+        
         echo "Got direct download URL: $DIRECT_URL"
         
-        # Download the server pack
+        # Download the server pack using cookies
         echo "Downloading server pack..."
-        curl -L -o server_pack.zip "$DIRECT_URL"
+        curl -L -b "$COOKIES" -o server_pack.zip "$DIRECT_URL"
         echo "Download complete"
         
         # Extract the server pack
