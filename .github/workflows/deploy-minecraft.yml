@@ -42,8 +42,18 @@ jobs:
         # Install Python dependencies
         pip3 install requests beautifulsoup4
 
+        # Fix Docker socket permissions and ensure daemon is running
+        sudo mkdir -p /var/run
+        sudo ln -s /run/docker.sock /var/run/docker.sock || true
+        sudo chmod 666 /var/run/docker.sock
+        sudo systemctl start docker || sudo service docker start
+        sudo systemctl status docker
+        sudo usermod -aG docker $USER
+        newgrp docker
+
         # Verify Docker installation
-        sudo docker run hello-world
+        docker info
+        docker run hello-world
 
     - name: Check environment
       run: |
