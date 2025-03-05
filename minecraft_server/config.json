@@ -5,7 +5,7 @@
   },
   "server": {
     "version": "1.19.4",
-    "server_pack_url": "https://www.curseforge.com/minecraft/modpacks/better-mc-forge-bmc4/download/6048096",
+    "server_pack_url": "https://www.curseforge.com/api/v1/mods/876781/files/6048096/download",
     "modpack_id": "6048096",
     "memory": {
       "min": "4G",
