@@ -1,11 +1,11 @@
 {
   "deployment": {
     "name": "minecraft-server",
-    "server_pack_url": "https://mediafilez.forgecdn.net/files/6048/96/BMC4_Server_Pack_v36.zip",
     "replicas": 1
   },
   "server": {
     "version": "1.19.4",
+    "server_pack_url": "https://www.curseforge.com/minecraft/modpacks/better-mc-forge-bmc4/download/6048096",
     "modpack_id": "6048096",
     "memory": {
       "min": "4G",

@@ -47,90 +47,98 @@ jobs:
         # Create directory for server files
         mkdir -p server_files
         
-        # Get the modpack ID from input or config.json
-        MODPACK_ID="${{ github.event.inputs.modpack_id }}"
-        if [ -f "minecraft_server/config.json" ]; then
-          CONFIG_MODPACK_ID=$(jq -r '.server.modpack_id // empty' minecraft_server/config.json)
-          if [ -n "$CONFIG_MODPACK_ID" ]; then
-            MODPACK_ID="$CONFIG_MODPACK_ID"
-            echo "Using modpack ID from config.json: $MODPACK_ID"
-          fi
-        fi
-        
-        if [ -z "$MODPACK_ID" ]; then
-          MODPACK_ID="6048096"  # Default to Better MC Forge
-          echo "No modpack ID specified, using default: $MODPACK_ID"
-        fi
-        
-        # Create a Python script to get the direct download URL
-        cat > get_curseforge_url.py << 'EOF'
+        # Create a Python script to handle CurseForge downloads
+        cat > get_curseforge_download.py << 'EOF'
         import requests
         import sys
         import json
         import re
         from bs4 import BeautifulSoup
+        from urllib.parse import urljoin
 
-        def get_direct_download_url(modpack_id):
-            # First try the CurseForge API approach
+        def get_direct_download_url(download_page_url):
             try:
-                # Use CF Core API
+                # Set up headers to mimic a browser
                 headers = {
-                    'Accept': 'application/json',
-                    'x-api-key': '$2a$10$5BS.SXGxLDfFHoEkV/Ff7OTNMrI4/54kKxYV3y/XwQPFdJWDSKbHG'  # Public API key
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                    'DNT': '1',
+                    'Connection': 'keep-alive',
+                    'Upgrade-Insecure-Requests': '1',
                 }
+
+                # First get the download page
+                print(f"Accessing download page: {download_page_url}", file=sys.stderr)
+                session = requests.Session()
+                response = session.get(download_page_url, headers=headers)
+                response.raise_for_status()
+
+                # Parse the page
+                soup = BeautifulSoup(response.text, 'html.parser')
                 
-                api_url = f"https://api.curseforge.com/v1/mods/files/{modpack_id}"
-                response = requests.get(api_url, headers=headers)
+                # Look for the server files download button
+                download_buttons = soup.find_all('a', string=re.compile('Download', re.IGNORECASE))
+                for button in download_buttons:
+                    href = button.get('href')
+                    if href and '/download/' in href:
+                        direct_url = urljoin('https://www.curseforge.com', href)
+                        print(f"Found download link: {direct_url}", file=sys.stderr)
+                        
+                        # Follow the download link
+                        print("Following download link...", file=sys.stderr)
+                        response = session.get(direct_url, headers=headers, allow_redirects=True)
+                        response.raise_for_status()
+                        
+                        # The final URL should be the direct file download
+                        final_url = response.url
+                        print(f"Final download URL: {final_url}", file=sys.stderr)
+                        return final_url
+
+                raise Exception("No download button found on the page")
                 
-                if response.status_code == 200:
-                    data = response.json()
-                    download_url = data['data']['downloadUrl']
-                    if download_url:
-                        return download_url
             except Exception as e:
-                print(f"API approach failed: {e}", file=sys.stderr)
-            
-            # Fallback to the server files approach
-            try:
-                # Try to find the server files directly
-                base_url = f"https://www.curseforge.com/minecraft/modpacks/all-modpacks/files/{modpack_id}/all"
-                response = requests.get(base_url)
-                
-                if response.status_code == 200:
-                    soup = BeautifulSoup(response.text, 'html.parser')
-                    server_links = soup.find_all('a', string=re.compile('Server', re.IGNORECASE))
-                    
-                    for link in server_links:
-                        href = link.get('href')
-                        if href and 'download' in href:
-                            return f"https://www.curseforge.com{href}"
-            except Exception as e:
-                print(f"Server files approach failed: {e}", file=sys.stderr)
-            
-            # If all else fails, return a default URL
-            return f"https://mediafilez.forgecdn.net/files/4979/252/All+the+Mods+9-1.0.9.zip"
+                print(f"Error getting download URL: {str(e)}", file=sys.stderr)
+                return None
 
         if __name__ == "__main__":
-            modpack_id = sys.argv[1]
-            direct_url = get_direct_download_url(modpack_id)
-            print(direct_url)
+            download_page_url = sys.argv[1]
+            direct_url = get_direct_download_url(download_page_url)
+            if direct_url:
+                print(direct_url)
+            else:
+                sys.exit(1)
         EOF
         
-        # Run the Python script to get the direct download URL
-        echo "Getting direct download URL for modpack ID: $MODPACK_ID"
-        SERVER_PACK_URL=$(python3 get_curseforge_url.py "$MODPACK_ID")
-        echo "Using download URL: $SERVER_PACK_URL"
-        
-        # Check if server pack exists in the repository
-        if [ -f "minecraft_server/server_pack.zip" ]; then
-          echo "Found server pack in repository, using it instead of downloading"
-          cp minecraft_server/server_pack.zip server_pack.zip
+        # Get the server pack URL from config.json
+        if [ -f "minecraft_server/config.json" ]; then
+          SERVER_PACK_URL=$(jq -r '.server.server_pack_url // empty' minecraft_server/config.json)
+          if [ -n "$SERVER_PACK_URL" ]; then
+            echo "Using server pack URL from config.json: $SERVER_PACK_URL"
+          else
+            echo "No server pack URL found in config.json"
+            exit 1
+          fi
         else
-          # Download the server pack
-          echo "Downloading server pack from: $SERVER_PACK_URL"
-          curl -L -o server_pack.zip "$SERVER_PACK_URL"
-          echo "Download complete"
+          echo "Config file not found"
+          exit 1
         fi
+        
+        # Get the direct download URL using the Python script
+        echo "Getting direct download URL..."
+        DIRECT_URL=$(python3 get_curseforge_download.py "$SERVER_PACK_URL")
+        
+        if [ -z "$DIRECT_URL" ]; then
+          echo "Failed to get direct download URL"
+          exit 1
+        fi
+        
+        echo "Got direct download URL: $DIRECT_URL"
+        
+        # Download the server pack
+        echo "Downloading server pack..."
+        curl -L -o server_pack.zip "$DIRECT_URL"
+        echo "Download complete"
         
         # Extract the server pack
         echo "Extracting server pack..."
