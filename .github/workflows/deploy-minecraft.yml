@@ -16,8 +16,8 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y git-lfs unzip jq gettext-base curl
-        git lfs install
+        sudo apt-get install -y unzip jq gettext-base curl
+        echo "Skipping git-lfs due to quota issues"
 
     - name: Check environment
       run: |
@@ -31,46 +31,80 @@ jobs:
         echo "Available disk space:"
         df -h
 
-    - name: Checkout code
+    - name: Checkout code (without LFS)
       uses: actions/checkout@v3
       with:
-        lfs: true
-    
-    - name: Extract Minecraft server files
+        lfs: false
+
+    - name: Create server files manually
       run: |
-        # Find the first zip file in the minecraft_server directory
-        ZIPFILE=$(find minecraft_server -name "*.zip" | head -n 1)
-        
-        if [ -z "$ZIPFILE" ]; then
-          echo "No zip file found in minecraft_server directory"
-          exit 1
-        fi
-        
-        echo "Found zip file: $ZIPFILE"
-        
-        # Create directory for extracted files
+        # Create directory for server files
         mkdir -p server_files
         
-        # Extract the zip file
-        unzip "$ZIPFILE" -d server_files
+        # Create eula.txt
+        echo "eula=true" > server_files/eula.txt
+        echo "Created eula.txt file"
         
-        echo "Server files extracted successfully"
-        
-        # Generate server.properties from config.json
-        if [ -f "minecraft_server/config.json" ]; then
-          echo "Generating server.properties from config.json"
-          
-          # Extract server properties from config.json
-          jq -r '.server.properties | to_entries | map("\(.key)=\(.value)") | .[]' minecraft_server/config.json > server_files/server.properties
-          
-          echo "server.properties generated successfully"
+        # Create docker-entrypoint.sh
+        cat > server_files/docker-entrypoint.sh << 'EOF'
+        #!/bin/bash
+        set -e
+
+        # Print Minecraft server version
+        echo "Starting Minecraft server with the following settings:"
+        echo "Memory: ${MIN_MEMORY} - ${MAX_MEMORY}"
+        echo "Server properties loaded from: /data/server.properties"
+
+        # Set memory settings in environment for the start.sh script to use
+        export JAVA_OPTS="-Xms${MIN_MEMORY} -Xmx${MAX_MEMORY}"
+
+        # Check if start.sh exists
+        if [ -f "/data/start.sh" ]; then
+          echo "Found start.sh script, executing..."
+          chmod +x /data/start.sh
+          exec /data/start.sh
         else
-          echo "Config file not found, skipping server.properties generation"
+          echo "No start.sh found, falling back to direct Java execution"
+          
+          # Check if server.jar exists
+          if [ ! -f "/data/server.jar" ]; then
+            echo "Error: server.jar not found!"
+            exit 1
+          fi
+          
+          # Start the Minecraft server directly
+          echo "Starting Minecraft server..."
+          exec java -Xms${MIN_MEMORY} -Xmx${MAX_MEMORY} -jar server.jar nogui
+        fi
+        EOF
+        
+        chmod +x server_files/docker-entrypoint.sh
+        echo "Created docker-entrypoint.sh script"
+        
+        # Create a basic server.properties file if needed
+        if [ ! -f "server_files/server.properties" ]; then
+          cat > server_files/server.properties << 'EOF'
+        difficulty=normal
+        gamemode=survival
+        max-players=20
+        motd=Kubernetes Minecraft Server
+        pvp=true
+        allow-nether=true
+        enable-command-block=false
+        spawn-protection=16
+        view-distance=10
+        EOF
+          echo "Created basic server.properties file"
         fi
         
-        # Make sure scripts are executable
-        chmod +x server_files/*.sh
-        echo "Made scripts executable"
+        # Download server.jar if needed
+        if [ ! -f "server_files/server.jar" ]; then
+          echo "Downloading server.jar..."
+          curl -o server_files/server.jar https://piston-data.mojang.com/v1/objects/8dd1a28015f51b1803213892b50b7b4fc76e594d/server.jar
+          echo "Downloaded server.jar"
+        fi
+        
+        echo "Server files created successfully"
     
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v2
@@ -85,22 +119,22 @@ jobs:
     - name: Extract build args from config
       id: build_args
       run: |
+        # Set default values
+        MIN_MEMORY="2G"
+        MAX_MEMORY="4G"
+        SERVER_PORT=25565
+        
+        # Try to read from config.json if it exists
         if [ -f "minecraft_server/config.json" ]; then
-          MIN_MEMORY=$(jq -r '.server.memory.min // "1G"' minecraft_server/config.json)
-          MAX_MEMORY=$(jq -r '.server.memory.max // "2G"' minecraft_server/config.json)
-          SERVER_PORT=25565
-          
-          echo "min_memory=$MIN_MEMORY" >> $GITHUB_OUTPUT
-          echo "max_memory=$MAX_MEMORY" >> $GITHUB_OUTPUT
-          echo "server_port=$SERVER_PORT" >> $GITHUB_OUTPUT
-          
-          echo "Extracted memory settings: Min=$MIN_MEMORY, Max=$MAX_MEMORY"
-        else
-          echo "Config file not found, using default memory settings"
-          echo "min_memory=1G" >> $GITHUB_OUTPUT
-          echo "max_memory=2G" >> $GITHUB_OUTPUT
-          echo "server_port=25565" >> $GITHUB_OUTPUT
+          MIN_MEMORY=$(jq -r '.server.memory.min // "2G"' minecraft_server/config.json)
+          MAX_MEMORY=$(jq -r '.server.memory.max // "4G"' minecraft_server/config.json)
         fi
+        
+        echo "min_memory=$MIN_MEMORY" >> $GITHUB_OUTPUT
+        echo "max_memory=$MAX_MEMORY" >> $GITHUB_OUTPUT
+        echo "server_port=$SERVER_PORT" >> $GITHUB_OUTPUT
+        
+        echo "Using memory settings: Min=$MIN_MEMORY, Max=$MAX_MEMORY"
     
     - name: Build and push Docker image
       uses: docker/build-push-action@v4
@@ -126,7 +160,7 @@ jobs:
       run: |
         export REGISTRY_URL=ghcr.io/${{ github.repository_owner }}
         export IMAGE_TAG=${{ github.sha }}
-        export DEPLOYMENT_NAME=$(jq -r '.deployment.name' minecraft_server/config.json)
+        export DEPLOYMENT_NAME=$(jq -r '.deployment.name' minecraft_server/config.json || echo "minecraft-server")
         
         # Replace variables in all Kubernetes files
         for file in k8s/*.yaml; do
