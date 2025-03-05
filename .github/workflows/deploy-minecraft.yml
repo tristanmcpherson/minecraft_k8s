@@ -42,18 +42,14 @@ jobs:
         # Install Python dependencies
         pip3 install requests beautifulsoup4
 
-        # Fix Docker socket permissions and ensure daemon is running
-        sudo mkdir -p /var/run
-        sudo ln -s /run/docker.sock /var/run/docker.sock || true
-        sudo chmod 666 /var/run/docker.sock
-        sudo systemctl start docker || sudo service docker start
-        sudo systemctl status docker
-        sudo usermod -aG docker $USER
-        newgrp docker
+        # Start Docker daemon
+        sudo systemctl unmask docker
+        sudo systemctl start docker
+        sudo chmod 666 /var/run/docker.sock || true
 
         # Verify Docker installation
-        docker info
-        docker run hello-world
+        sudo docker info
+        sudo docker run hello-world
 
     - name: Check environment
       run: |
@@ -61,7 +57,7 @@ jobs:
         whoami
         pwd
         echo "Docker version:"
-        docker --version || echo "Docker not found"
+        sudo docker --version || echo "Docker not found"
         echo "System info:"
         uname -a
         echo "Available disk space:"
@@ -71,15 +67,6 @@ jobs:
       uses: actions/checkout@v3
       with:
         lfs: false
-
-    - name: Start Docker service
-      run: |
-        echo "Starting Docker service..."
-        sudo systemctl start docker || sudo service docker start
-        echo "Waiting for Docker to be ready..."
-        timeout 60s bash -c 'until docker info >/dev/null 2>&1; do sleep 1; done'
-        echo "Docker is ready"
-        docker info
 
     - name: Download and extract server pack
       env:
