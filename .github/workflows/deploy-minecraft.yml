@@ -36,16 +36,42 @@ jobs:
       with:
         lfs: false
 
-    - name: Create server files manually
+    - name: Download and extract server pack
       run: |
         # Create directory for server files
         mkdir -p server_files
         
+        # Get the server pack URL from config.json
+        if [ -f "minecraft_server/config.json" ]; then
+          SERVER_PACK_URL=$(jq -r '.server.pack_url // empty' minecraft_server/config.json)
+          if [ -n "$SERVER_PACK_URL" ]; then
+            echo "Using server pack URL from config.json: $SERVER_PACK_URL"
+          else
+            echo "No server pack URL found in config.json, using default"
+            SERVER_PACK_URL="https://mediafilez.forgecdn.net/files/4979/252/All+the+Mods+9-1.0.9.zip"
+          fi
+        else
+          echo "Config file not found, using default server pack URL"
+          SERVER_PACK_URL="https://mediafilez.forgecdn.net/files/4979/252/All+the+Mods+9-1.0.9.zip"
+        fi
+        
+        # Download the server pack
+        echo "Downloading server pack from: $SERVER_PACK_URL"
+        curl -L -o server_pack.zip "$SERVER_PACK_URL"
+        echo "Download complete"
+        
+        # Extract the server pack
+        echo "Extracting server pack..."
+        unzip -q server_pack.zip -d server_files
+        echo "Extraction complete"
+        
         # Create eula.txt
+        echo "Creating eula.txt file..."
         echo "eula=true" > server_files/eula.txt
-        echo "Created eula.txt file"
+        echo "eula.txt created successfully"
         
         # Create docker-entrypoint.sh
+        echo "Creating docker-entrypoint.sh..."
         cat > server_files/docker-entrypoint.sh << 'EOF'
         #!/bin/bash
         set -e
@@ -64,47 +90,49 @@ jobs:
           chmod +x /data/start.sh
           exec /data/start.sh
         else
-          echo "No start.sh found, falling back to direct Java execution"
-          
-          # Check if server.jar exists
-          if [ ! -f "/data/server.jar" ]; then
-            echo "Error: server.jar not found!"
-            exit 1
+          # Look for other startup scripts
+          if [ -f "/data/startserver.sh" ]; then
+            echo "Found startserver.sh script, executing..."
+            chmod +x /data/startserver.sh
+            exec /data/startserver.sh
+          elif [ -f "/data/run.sh" ]; then
+            echo "Found run.sh script, executing..."
+            chmod +x /data/run.sh
+            exec /data/run.sh
+          elif [ -f "/data/server-start.sh" ]; then
+            echo "Found server-start.sh script, executing..."
+            chmod +x /data/server-start.sh
+            exec /data/server-start.sh
+          else
+            echo "No startup script found, falling back to direct Java execution"
+            
+            # Find the server jar file
+            SERVER_JAR=$(find /data -name "forge-*.jar" -o -name "server.jar" -o -name "*server*.jar" | head -n 1)
+            
+            if [ -z "$SERVER_JAR" ]; then
+              echo "Error: No server jar found!"
+              exit 1
+            fi
+            
+            echo "Found server jar: $SERVER_JAR"
+            
+            # Start the Minecraft server directly
+            echo "Starting Minecraft server..."
+            cd /data
+            exec java -Xms${MIN_MEMORY} -Xmx${MAX_MEMORY} -jar $(basename $SERVER_JAR) nogui
           fi
-          
-          # Start the Minecraft server directly
-          echo "Starting Minecraft server..."
-          exec java -Xms${MIN_MEMORY} -Xmx${MAX_MEMORY} -jar server.jar nogui
         fi
         EOF
         
         chmod +x server_files/docker-entrypoint.sh
-        echo "Created docker-entrypoint.sh script"
+        echo "docker-entrypoint.sh created successfully"
         
-        # Create a basic server.properties file if needed
-        if [ ! -f "server_files/server.properties" ]; then
-          cat > server_files/server.properties << 'EOF'
-        difficulty=normal
-        gamemode=survival
-        max-players=20
-        motd=Kubernetes Minecraft Server
-        pvp=true
-        allow-nether=true
-        enable-command-block=false
-        spawn-protection=16
-        view-distance=10
-        EOF
-          echo "Created basic server.properties file"
-        fi
+        # List the extracted files
+        echo "Listing extracted files:"
+        find server_files -type f -name "*.jar" | sort
+        find server_files -type f -name "*.sh" | sort
         
-        # Download server.jar if needed
-        if [ ! -f "server_files/server.jar" ]; then
-          echo "Downloading server.jar..."
-          curl -o server_files/server.jar https://piston-data.mojang.com/v1/objects/8dd1a28015f51b1803213892b50b7b4fc76e594d/server.jar
-          echo "Downloaded server.jar"
-        fi
-        
-        echo "Server files created successfully"
+        echo "Server files prepared successfully"
     
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v2
@@ -120,14 +148,14 @@ jobs:
       id: build_args
       run: |
         # Set default values
-        MIN_MEMORY="2G"
-        MAX_MEMORY="4G"
+        MIN_MEMORY="4G"
+        MAX_MEMORY="8G"
         SERVER_PORT=25565
         
         # Try to read from config.json if it exists
         if [ -f "minecraft_server/config.json" ]; then
-          MIN_MEMORY=$(jq -r '.server.memory.min // "2G"' minecraft_server/config.json)
-          MAX_MEMORY=$(jq -r '.server.memory.max // "4G"' minecraft_server/config.json)
+          MIN_MEMORY=$(jq -r '.server.memory.min // "4G"' minecraft_server/config.json)
+          MAX_MEMORY=$(jq -r '.server.memory.max // "8G"' minecraft_server/config.json)
         fi
         
         echo "min_memory=$MIN_MEMORY" >> $GITHUB_OUTPUT

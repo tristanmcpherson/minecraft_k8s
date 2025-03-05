@@ -1,6 +1,7 @@
 {
   "deployment": {
     "name": "bmc4-server",
+    "server_pack_url": "https://mediafilez.forgecdn.net/files/6048/96/BMC4_Server_Pack_v36.zip",
     "replicas": 1
   },
   "server": {
