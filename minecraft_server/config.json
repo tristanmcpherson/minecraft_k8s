@@ -1,20 +1,21 @@
 {
   "deployment": {
-    "name": "bmc4-server",
+    "name": "minecraft-server",
     "server_pack_url": "https://mediafilez.forgecdn.net/files/6048/96/BMC4_Server_Pack_v36.zip",
     "replicas": 1
   },
   "server": {
     "version": "1.19.4",
+    "modpack_id": "6048096",
     "memory": {
-      "min": "2G",
-      "max": "4G"
+      "min": "4G",
+      "max": "8G"
     },
     "properties": {
       "difficulty": "normal",
       "gamemode": "survival",
       "max-players": 20,
-      "motd": "Shredder's BMC4 Minecraft Server",
+      "motd": "Kubernetes Minecraft Server",
       "pvp": true,
       "allow-nether": true,
       "enable-command-block": false,

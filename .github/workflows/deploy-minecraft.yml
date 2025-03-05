@@ -4,6 +4,11 @@ on:
   push:
     branches: [ master ]
   workflow_dispatch:
+    inputs:
+      modpack_id:
+        description: 'CurseForge modpack ID (e.g., 6048096 for Better MC Forge)'
+        required: false
+        default: '6048096'
 
 jobs:
   build-and-deploy:
@@ -16,8 +21,9 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y unzip jq gettext-base curl
+        sudo apt-get install -y unzip jq gettext-base curl python3 python3-pip
         echo "Skipping git-lfs due to quota issues"
+        pip3 install requests beautifulsoup4
 
     - name: Check environment
       run: |
@@ -41,24 +47,90 @@ jobs:
         # Create directory for server files
         mkdir -p server_files
         
-        # Get the server pack URL from config.json
+        # Get the modpack ID from input or config.json
+        MODPACK_ID="${{ github.event.inputs.modpack_id }}"
         if [ -f "minecraft_server/config.json" ]; then
-          SERVER_PACK_URL=$(jq -r '.server.pack_url // empty' minecraft_server/config.json)
-          if [ -n "$SERVER_PACK_URL" ]; then
-            echo "Using server pack URL from config.json: $SERVER_PACK_URL"
-          else
-            echo "No server pack URL found in config.json, using default"
-            SERVER_PACK_URL="https://mediafilez.forgecdn.net/files/4979/252/All+the+Mods+9-1.0.9.zip"
+          CONFIG_MODPACK_ID=$(jq -r '.server.modpack_id // empty' minecraft_server/config.json)
+          if [ -n "$CONFIG_MODPACK_ID" ]; then
+            MODPACK_ID="$CONFIG_MODPACK_ID"
+            echo "Using modpack ID from config.json: $MODPACK_ID"
           fi
-        else
-          echo "Config file not found, using default server pack URL"
-          SERVER_PACK_URL="https://mediafilez.forgecdn.net/files/4979/252/All+the+Mods+9-1.0.9.zip"
         fi
         
-        # Download the server pack
-        echo "Downloading server pack from: $SERVER_PACK_URL"
-        curl -L -o server_pack.zip "$SERVER_PACK_URL"
-        echo "Download complete"
+        if [ -z "$MODPACK_ID" ]; then
+          MODPACK_ID="6048096"  # Default to Better MC Forge
+          echo "No modpack ID specified, using default: $MODPACK_ID"
+        fi
+        
+        # Create a Python script to get the direct download URL
+        cat > get_curseforge_url.py << 'EOF'
+        import requests
+        import sys
+        import json
+        import re
+        from bs4 import BeautifulSoup
+
+        def get_direct_download_url(modpack_id):
+            # First try the CurseForge API approach
+            try:
+                # Use CF Core API
+                headers = {
+                    'Accept': 'application/json',
+                    'x-api-key': '$2a$10$5BS.SXGxLDfFHoEkV/Ff7OTNMrI4/54kKxYV3y/XwQPFdJWDSKbHG'  # Public API key
+                }
+                
+                api_url = f"https://api.curseforge.com/v1/mods/files/{modpack_id}"
+                response = requests.get(api_url, headers=headers)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    download_url = data['data']['downloadUrl']
+                    if download_url:
+                        return download_url
+            except Exception as e:
+                print(f"API approach failed: {e}", file=sys.stderr)
+            
+            # Fallback to the server files approach
+            try:
+                # Try to find the server files directly
+                base_url = f"https://www.curseforge.com/minecraft/modpacks/all-modpacks/files/{modpack_id}/all"
+                response = requests.get(base_url)
+                
+                if response.status_code == 200:
+                    soup = BeautifulSoup(response.text, 'html.parser')
+                    server_links = soup.find_all('a', string=re.compile('Server', re.IGNORECASE))
+                    
+                    for link in server_links:
+                        href = link.get('href')
+                        if href and 'download' in href:
+                            return f"https://www.curseforge.com{href}"
+            except Exception as e:
+                print(f"Server files approach failed: {e}", file=sys.stderr)
+            
+            # If all else fails, return a default URL
+            return f"https://mediafilez.forgecdn.net/files/4979/252/All+the+Mods+9-1.0.9.zip"
+
+        if __name__ == "__main__":
+            modpack_id = sys.argv[1]
+            direct_url = get_direct_download_url(modpack_id)
+            print(direct_url)
+        EOF
+        
+        # Run the Python script to get the direct download URL
+        echo "Getting direct download URL for modpack ID: $MODPACK_ID"
+        SERVER_PACK_URL=$(python3 get_curseforge_url.py "$MODPACK_ID")
+        echo "Using download URL: $SERVER_PACK_URL"
+        
+        # Check if server pack exists in the repository
+        if [ -f "minecraft_server/server_pack.zip" ]; then
+          echo "Found server pack in repository, using it instead of downloading"
+          cp minecraft_server/server_pack.zip server_pack.zip
+        else
+          # Download the server pack
+          echo "Downloading server pack from: $SERVER_PACK_URL"
+          curl -L -o server_pack.zip "$SERVER_PACK_URL"
+          echo "Download complete"
+        fi
         
         # Extract the server pack
         echo "Extracting server pack..."
